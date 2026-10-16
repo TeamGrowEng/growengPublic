@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+.vercel/
+backups/
+server/
+api/
+supabase/
+scripts/
+docs/
+AGENTS.md

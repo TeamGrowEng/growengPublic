@@ -1,0 +1,24 @@
+import type { AssessmentResult } from '../shared/assessment';
+import type { StoredObservations } from '../shared/audio-observations';
+const labels: Record<string, string> = { no_speech_energy: '발화 에너지 확인 어려움', low_level: '작은 음량', clipping: '음성 신호 포화', possible_truncation: '5초 종료 시 말끝 잘림 가능성', short_speech: '관측 발화 구간 부족' };
+export default function ObservationDetails({ result, stored }: { result?: AssessmentResult; stored?: StoredObservations }) {
+  const observation = stored?.features ?? result?.observations;
+  const evidence = result?.evidence;
+  return <div><p>운율: {result?.prosody === undefined || result.prosody === null ? '미측정' : result.prosody.toFixed(1)}</p>{observation ? <>
+    <p>녹음 관측: {observation.status === 'usable' ? '비교 가능' : '확인 필요'} · 종료 {observation.stopReason === 'time_limit' ? '5초 제한' : observation.stopReason === 'user_stop' ? '직접 종료' : '정보 없음'}</p>
+    {observation.flags.length ? <ul>{observation.flags.map(flag => <li key={flag}>{labels[flag]}</li>)}</ul> : null}
+    <p>내부 쉼 후보 {observation.internalPauses.length}개 · 쉼 비율 {observation.pauseRatio === null ? '미측정' : `${(observation.pauseRatio * 100).toFixed(1)}%`}</p>
+    <p>말 시작 대기: {observation.speechStartMs === null ? '발화 구간을 확인하지 못함' : `${(observation.speechStartMs / 1000).toFixed(2)}초 · 능력 감점에 사용하지 않음`}</p>
+    {observation.acousticContext ? <><p>앞뒤 낮은 에너지 구간: {observation.acousticContext.backgroundRms === null ? '추정 보류 · 0.2초 이상의 비교 구간 부족' : `상대 RMS ${observation.acousticContext.backgroundRms.toFixed(4)} · ${(observation.acousticContext.backgroundWindowMs / 1000).toFixed(2)}초 관측`}</p><p className="demo-note">이 값은 잡음비나 조용한 환경 인증이 아닙니다. 말 속도·조음 속도는 실제 발화 음절 수를 측정하지 않아 보류합니다. 참조문의 음절 수로 대신 계산하지 않습니다.</p></> : <p className="demo-note">이전 관측에는 배경 수준 추정이 없습니다. 말 속도·조음 속도도 미측정입니다.</p>}
+    {observation.internalPauses.length ? <ul>{observation.internalPauses.map((span, index) => <li key={index}>{(span.startMs / 1000).toFixed(2)}~{(span.endMs / 1000).toFixed(2)}초</li>)}</ul> : null}
+    <p className="demo-note">음량 기반 임시 관측이며 말소리·잡음·폐쇄음을 완전히 구분하지 못합니다. 검증된 아동 유창성 점수가 아닙니다.</p>
+  </> : <p className="demo-note">이전 평가에는 녹음 품질과 쉼 관측이 없습니다.</p>}
+    {evidence ? <div><p>문항 검토: {evidence.policy ? `검토본 ${evidence.policy.revision}` : '미등록'} · 구간 근거 {evidence.eligible ? '확인 가능' : '일부 또는 전체 보류'}</p>
+      {evidence.pauses.length ? <ul>{evidence.pauses.map((pause, index) => <li key={index}>{(pause.startMs / 1000).toFixed(2)}~{(pause.endMs / 1000).toFixed(2)}초 · {pause.classification === 'allowed-boundary' ? '강사가 허용한 경계' : pause.classification === 'other-boundary' ? '그 밖의 단어 경계 · 오류 확정 아님' : '경계 판정 보류'}</li>)}</ul> : null}
+      {evidence.mappedSounds.length ? <><p>강사가 연결한 철자와 소리 · 점수는 Azure 원본</p><ul>{evidence.mappedSounds.map((sound, index) => <li key={index}>{evidence.policy!.policy.words[sound.wordIndex].word}의 <strong>{sound.text}</strong> → {sound.phonemes.map((p, i) => `/${p}/ ${sound.accuracies[i] === null ? '미측정' : sound.accuracies[i]!.toFixed(1)}`).join(', ')} · 정렬 기준 {sound.pronunciationVariant ? `추가 허용 발음 ${sound.pronunciationVariant}` : '기본 발음'}</li>)}</ul></> : null}
+      {evidence.policy?.policy.allowedIntonation?.length ? <p>강사가 허용한 말미 억양: {evidence.policy.policy.allowedIntonation.map(tone => tone === 'rising' ? '상승' : tone === 'falling' ? '하강' : '평탄').join(' · ')} · 자동 정오 판정 아님</p> : null}
+      {evidence.stressTargets.length ? <p>목표 강세 {evidence.stressTargets.length}개 중 음절 구간 확보 {evidence.stressTargets.filter(target => target.span !== null).length}개 · 강세 정오 판정은 아직 제공하지 않습니다.</p> : null}
+      {!evidence.eligible ? <p className="demo-note">{!evidence.policy ? '강사 검토가 없어 철자·강세·허용 쉼 판정을 보류합니다. ' : !evidence.policy.policy.lengthReviewed ? '5초 문항 길이 검토가 필요합니다. ' : ''}{evidence.reasons.includes('word-alignment-unavailable') ? '단어 정렬을 확인하지 못했습니다. ' : ''}{evidence.reasons.some(reason => reason.startsWith('phoneme-alignment')) ? '목표 소리와 응답의 음소 순서가 달라 일부 철자 대응을 보류합니다. ' : ''}{evidence.reasons.some(reason => reason.startsWith('quality')) ? '녹음 품질을 먼저 확인해 주세요.' : ''}</p> : null}
+    </div> : null}
+    {result?.words.some(word => word.phonemes.some(phone => phone.alternatives?.length) || word.breakEvidence || word.monotone !== undefined) ? <details><summary>Azure 음소 후보와 운율 원본 근거</summary><p className="demo-note">후보 점수는 모델의 가설이며 실제 소리 대치나 오류의 확률로 해석하지 않습니다. 강사 청취 확인이 필요해요.</p>{result.words.map((word, index) => <div key={index}><strong>{word.word}</strong>{word.breakEvidence ? <p>예상 밖 쉼 근거: {word.breakEvidence.unexpected ?? '미측정'} · 쉼 누락 근거: {word.breakEvidence.missing ?? '미측정'}</p> : null}{word.monotone !== undefined ? <p>Azure 단조 운율 표시: {word.monotone ? '있음' : '없음'}</p> : null}<ul>{word.phonemes.filter(phone => phone.alternatives?.length).map((phone, i) => <li key={i}>목표 /{phone.phoneme}/ · 후보 {phone.alternatives!.map(candidate => `/${candidate.phoneme}/ ${candidate.score === null ? '미측정' : candidate.score.toFixed(1)}`).join(', ')}</li>)}</ul></div>)}</details> : null}</div>;
+}
